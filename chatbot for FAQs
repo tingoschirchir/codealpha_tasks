@@ -1,0 +1,49 @@
+
+!pip install spacy
+!python -m spacy download en_core_web_md
+
+import spacy
+nlp = spacy.load("en_core_web_md")
+
+# Sample FAQs
+faqs = {
+    "What is COVID-19?": "COVID-19 is a disease caused by a virus called SARS-CoV-2. It primarily spreads through respiratory droplets when an infected person coughs, sneezes, or talks.",
+    "What are the symptoms of COVID-19?": "Common symptoms include fever, cough, fatigue, loss of taste or smell, sore throat, and difficulty breathing.",
+    "How does COVID-19 spread?": "COVID-19 spreads mainly through respiratory droplets when an infected person coughs, sneezes, or talks. It can also spread by touching contaminated surfaces and then touching the face.",
+    "How can I protect myself from COVID-19?": "To protect yourself, wear a mask, practice social distancing, wash your hands frequently, and avoid crowded places.",
+    "Is there a vaccine for COVID-19?": "Yes, several vaccines have been developed and approved for use against COVID-19. Vaccination is highly recommended to reduce the risk of severe illness.",
+    "What should I do if I have COVID-19 symptoms?": "If you have symptoms, isolate yourself, get tested, and consult a healthcare provider. Follow local health guidelines for quarantine and treatment.",
+    "Can I get COVID-19 more than once?": "Yes, reinfection is possible, though it is less common. Vaccination and following preventive measures can reduce the risk of reinfection.",
+    "How long does it take to recover from COVID-19?": "Recovery time varies. Mild cases may recover in 1-2 weeks, while severe cases may take several weeks or longer.",
+    "Are children at risk of COVID-19?": "Children can contract COVID-19, but they are less likely to develop severe symptoms compared to adults. However, some children may develop a rare condition called MIS-C.",
+    "What is the difference between COVID-19 and the flu?": "COVID-19 and the flu have similar symptoms, but COVID-19 is more contagious and can cause more severe illness. Testing is required to confirm the diagnosis."
+}
+preprocessed_faqs = {nlp(q): a for q, a in faqs.items()}
+
+def get_response(user_input):
+    """
+    Get the most relevant response for the user's input.
+    """
+    # Preprocess user input using SpaCy
+    user_input_doc = nlp(user_input.lower())
+
+    # Calculate similarity scores between user input and FAQs
+    similarities = [(faq_doc.similarity(user_input_doc), faq_answer) for faq_doc, faq_answer in preprocessed_faqs.items()]
+
+    # Find the FAQ with the highest similarity score
+    most_similar_faq = max(similarities, key=lambda x: x[0])
+
+    # Return the corresponding answer if similarity is above a threshold
+    if most_similar_faq[0] > 0.7:  # Adjust threshold as needed
+        return most_similar_faq[1]
+    else:
+        return "I'm sorry, I don't understand that question. Can you please rephrase or ask something else?"
+
+print("COVID-19 FAQ Chatbot: Hello! I can answer your questions about COVID-19. Type 'exit' to end the conversation.")
+while True:
+    user_input = input("You: ")
+    if user_input.lower() in ["exit", "quit", "bye"]:
+        print("COVID-19 FAQ Chatbot: Goodbye! Stay safe!")
+        break
+    response = get_response(user_input)
+    print(f"COVID-19 FAQ Chatbot: {response}")
