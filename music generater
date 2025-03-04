@@ -1,0 +1,144 @@
+import mido
+import numpy as np
+import tensorflow as tf
+import pygame
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
+from tensorflow.keras.utils import to_categorical
+from mido import MidiFile, MidiTrack, Message
+import tkinter as tk
+from tkinter import messagebox
+
+# Preprocess Data Function
+def create_sequences(notes, seq_length):
+    X = []
+    y = []
+    for i in range(len(notes) - seq_length):
+        seq_in = notes[i:i + seq_length]
+        seq_out = notes[i + seq_length]
+        X.append(seq_in)
+        y.append(seq_out)
+    return X, y
+
+# Load the MIDI file (make sure to replace the path with your actual path)
+def load_midi(file_path):
+    midi = mido.MidiFile(file_path)
+    notes = []
+    for msg in midi:
+        if not msg.is_meta and msg.type == 'note_on':
+            notes.append(msg.note)
+    return notes
+
+# Save the generated sequence as a MIDI file
+def save_as_midi(notes, filename):
+    midi = MidiFile()
+    track = MidiTrack()
+    midi.tracks.append(track)
+    for note in notes:
+        track.append(Message('note_on', note=note, velocity=64, time=128))
+        track.append(Message('note_off', note=note, velocity=64, time=128))
+    midi.save(filename)
+
+# Music Generation Function
+def generate_music(model, seed, length, int_to_note):
+    generated = seed
+    for _ in range(length):
+        prediction = model.predict(seed, verbose=0)
+        next_note = np.argmax(prediction, axis=1)
+        generated = np.append(generated, next_note)
+        seed = np.append(seed[:, 1:, :], to_categorical(next_note, num_classes=len(unique_notes)).reshape(1, 1, len(unique_notes)), axis=1)
+    return [int_to_note[note] for note in generated]
+
+# Tkinter Interface to Control Music Generation and Playback
+class MusicPlayerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Music Generator")
+        
+        self.generate_button = tk.Button(self.root, text="Generate Music", command=self.generate_music)
+        self.generate_button.pack(pady=10)
+
+        self.play_button = tk.Button(self.root, text="Play Music", command=self.play_music, state=tk.DISABLED)
+        self.play_button.pack(pady=10)
+
+        self.pause_button = tk.Button(self.root, text="Pause Music", command=self.pause_music, state=tk.DISABLED)
+        self.pause_button.pack(pady=10)
+
+        self.resume_button = tk.Button(self.root, text="Resume Music", command=self.resume_music, state=tk.DISABLED)
+        self.resume_button.pack(pady=10)
+
+        self.status_label = tk.Label(self.root, text="Status: Not playing music", fg="red")
+        self.status_label.pack(pady=10)
+
+        self.generated_notes = None
+        self.seed_sequence = None
+        self.model = None
+
+        pygame.mixer.init()
+
+    def generate_music(self):
+        # Load MIDI file and preprocess
+        notes = load_midi(r'C:\Users\ADMIN\Downloads\Digital Pressure - Digital Theory.mid')
+        seq_length = 20
+        X, y = create_sequences(notes, seq_length)
+        
+        X = np.array(X)
+        y = np.array(y)
+
+        unique_notes = sorted(set(notes))
+        note_to_int = {note: i for i, note in enumerate(unique_notes)}
+        
+        X_mapped = [[note_to_int[note] for note in seq] for seq in X]
+        y_mapped = [note_to_int[note] for note in y]
+
+        X_encoded = np.array([np.eye(len(unique_notes))[seq] for seq in X_mapped])
+        y_encoded = to_categorical(y_mapped, num_classes=len(unique_notes))
+
+        self.model = Sequential([
+            Input(shape=(X_encoded.shape[1], X_encoded.shape[2])),
+            LSTM(256, return_sequences=True),
+            Dropout(0.3),
+            LSTM(256, return_sequences=False),
+            Dropout(0.3),
+            Dense(len(unique_notes), activation='softmax')
+        ])
+
+        self.model.compile(loss='categorical_crossentropy', optimizer='adam')
+        self.model.fit(X_encoded, y_encoded, epochs=100, batch_size=64)
+
+        # Generate music using the trained model
+        int_to_note = {i: note for note, i in note_to_int.items()}
+        self.seed_sequence = np.random.randint(0, len(unique_notes), (1, seq_length, len(unique_notes)))
+        self.generated_notes = generate_music(self.model, self.seed_sequence, 100, int_to_note)
+
+        # Save the generated music as a MIDI file
+        save_as_midi(self.generated_notes, 'generated_music.mid')
+        
+        self.status_label.config(text="Status: Music generated successfully", fg="green")
+        self.play_button.config(state=tk.NORMAL)
+        
+    def play_music(self):
+        if self.generated_notes:
+            pygame.mixer.music.load('generated_music.mid')
+            pygame.mixer.music.play()
+            self.status_label.config(text="Status: Music playing", fg="green")
+            self.play_button.config(state=tk.DISABLED)
+            self.pause_button.config(state=tk.NORMAL)
+            self.resume_button.config(state=tk.DISABLED)
+
+    def pause_music(self):
+        pygame.mixer.music.pause()
+        self.status_label.config(text="Status: Music paused", fg="orange")
+        self.pause_button.config(state=tk.DISABLED)
+        self.resume_button.config(state=tk.NORMAL)
+
+    def resume_music(self):
+        pygame.mixer.music.unpause()
+        self.status_label.config(text="Status: Music resumed", fg="green")
+        self.pause_button.config(state=tk.NORMAL)
+        self.resume_button.config(state=tk.DISABLED)
+
+# Initialize the Tkinter window and start the app
+root = tk.Tk()
+app = MusicPlayerApp(root)
+root.mainloop()
